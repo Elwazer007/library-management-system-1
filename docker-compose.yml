@@ -1,0 +1,48 @@
+version: '3.8'
+
+services:
+  app:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    depends_on:
+      - db
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      DB_HOST: db
+      DB_USER: root
+      DB_PASSWORD: rootpassword
+      DB_NAME: library_management_system
+    volumes:
+      - ./:/usr/src/app
+      - /usr/src/app/node_modules
+    command: >
+      sh -c "
+        echo 'Waiting for MySQL to start...';
+        while ! mysqladmin ping -h db --silent; do
+          sleep 1;
+        done;
+        echo 'MySQL is up - executing command';
+        if [ \"$NODE_ENV\" = \"production\" ]; then
+          npm run start;
+        else
+          npm run dev;
+        fi
+      "
+
+  db:
+    image: mysql:8.0
+    restart: always
+    environment:
+      MYSQL_DATABASE: library_management_system
+      MYSQL_ROOT_PASSWORD: rootpassword
+    volumes:
+      - ./mysql-data:/var/lib/mysql
+      - ./database_setup.sql:/docker-entrypoint-initdb.d/database_setup.sql
+    ports:
+      - "3306:3306"
+
+volumes:
+  mysql-data:
