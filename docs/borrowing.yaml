@@ -1,0 +1,155 @@
+openapi: 3.0.0
+info:
+  title: Borrowing Process API
+  version: 1.0.0
+  description: API endpoints for managing borrowing processes in the Library Management System
+
+components:
+  schemas:
+    BorrowingProcess:
+      type: object
+      properties:
+        id:
+          type: integer
+          description: The auto-generated id of the borrowing process
+        book_id:
+          type: integer
+          description: The ID of the borrowed book
+        borrower_id:
+          type: integer
+          description: The ID of the borrower
+        checkout_date:
+          type: string
+          format: date-time
+          description: The date when the book was checked out
+        due_date:
+          type: string
+          format: date-time
+          description: The date when the book is due to be returned
+        return_date:
+          type: string
+          format: date-time
+          description: The date when the book was returned (null if not returned yet)
+
+paths:
+  /api/borrowing/checkout:
+    post:
+      summary: Check out a book
+      tags: [Borrowing]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - book_id
+                - borrower_id
+                - due_date
+              properties:
+                book_id:
+                  type: integer
+                borrower_id:
+                  type: integer
+                due_date:
+                  type: string
+                  format: date-time
+      responses:
+        201:
+          description: Book checked out successfully
+        400:
+          description: Missing required fields or book not available
+        404:
+          description: Borrower not found
+        500:
+          description: Server error
+      x-rateLimit:
+        description: This endpoint is rate-limited
+
+  /api/borrowing/return:
+    post:
+      summary: Return a book
+      tags: [Borrowing]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - borrowing_process_id
+              properties:
+                borrowing_process_id:
+                  type: integer
+      responses:
+        200:
+          description: Book returned successfully
+        400:
+          description: Borrowing Process ID is required
+        404:
+          description: Borrowing process not found or book already returned
+        500:
+          description: Server error
+
+  /api/borrowing/borrower/{id}:
+    get:
+      summary: Get books borrowed by a specific borrower
+      tags: [Borrowing]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: integer
+          description: The ID of the borrower
+      responses:
+        200:
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    title:
+                      type: string
+                    author:
+                      type: string
+                    checkout_date:
+                      type: string
+                      format: date-time
+                    due_date:
+                      type: string
+                      format: date-time
+        500:
+          description: Server error
+
+  /api/borrowing/overdue:
+    get:
+      summary: Get all overdue books
+      tags: [Borrowing]
+      responses:
+        200:
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    title:
+                      type: string
+                    author:
+                      type: string
+                    borrower_name:
+                      type: string
+                    checkout_date:
+                      type: string
+                      format: date-time
+                    due_date:
+                      type: string
+                      format: date-time
+        500:
+          description: Server error

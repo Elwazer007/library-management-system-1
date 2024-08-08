@@ -1,0 +1,188 @@
+openapi: 3.0.0
+info:
+  title: Reports API
+  version: 1.0.0
+  description: API endpoints for generating reports in the Library Management System
+
+paths:
+  /api/reports/borrowing:
+    get:
+      summary: Get borrowing report
+      tags: [Reports]
+      parameters:
+        - in: query
+          name: startDate
+          required: true
+          schema:
+            type: string
+            format: date
+          description: Start date for the report period
+        - in: query
+          name: endDate
+          required: true
+          schema:
+            type: string
+            format: date
+          description: End date for the report period
+        - in: query
+          name: format
+          schema:
+            type: string
+            enum: [json, csv, xlsx]
+          description: Output format of the report (default is JSON)
+      responses:
+        200:
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/BorrowingReportItem'
+            text/csv:
+              schema:
+                type: string
+                format: binary
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
+                type: string
+                format: binary
+        400:
+          description: Start date and end date are required
+        500:
+          description: Server error
+
+  /api/reports/overdue-borrows:
+    get:
+      summary: Get overdue borrows from last month
+      tags: [Reports]
+      parameters:
+        - in: query
+          name: format
+          schema:
+            type: string
+            enum: [json, csv, xlsx]
+          description: Output format of the report (default is JSON)
+      responses:
+        200:
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/OverdueBorrowsReportItem'
+            text/csv:
+              schema:
+                type: string
+                format: binary
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
+                type: string
+                format: binary
+        500:
+          description: Server error
+
+  /api/reports/all-borrowing-processes-last-month:
+    get:
+      summary: Get all borrowing processes from last month
+      tags: [Reports]
+      parameters:
+        - in: query
+          name: format
+          schema:
+            type: string
+            enum: [json, csv, xlsx]
+          description: Output format of the report (default is JSON)
+      responses:
+        200:
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AllBorrowingProcessesReportItem'
+            text/csv:
+              schema:
+                type: string
+                format: binary
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
+                type: string
+                format: binary
+        500:
+          description: Server error
+
+components:
+  schemas:
+    BorrowingReportItem:
+      type: object
+      properties:
+        book_title:
+          type: string
+        book_author:
+          type: string
+        book_ISBN:
+          type: string
+        borrower_name:
+          type: string
+        borrower_email:
+          type: string
+        checkout_date:
+          type: string
+          format: date-time
+        due_date:
+          type: string
+          format: date-time
+        return_date:
+          type: string
+          format: date-time
+
+    OverdueBorrowsReportItem:
+      type: object
+      properties:
+        book_title:
+          type: string
+        book_author:
+          type: string
+        book_ISBN:
+          type: string
+        borrower_name:
+          type: string
+        borrower_email:
+          type: string
+        checkout_date:
+          type: string
+          format: date-time
+        due_date:
+          type: string
+          format: date-time
+        days_overdue:
+          type: integer
+
+    AllBorrowingProcessesReportItem:
+      type: object
+      properties:
+        book_title:
+          type: string
+        book_author:
+          type: string
+        book_ISBN:
+          type: string
+        borrower_name:
+          type: string
+        borrower_email:
+          type: string
+        checkout_date:
+          type: string
+          format: date-time
+        due_date:
+          type: string
+          format: date-time
+        return_date:
+          type: string
+          format: date-time
+        status:
+          type: string
+          enum: [Returned, Overdue, Ongoing]
