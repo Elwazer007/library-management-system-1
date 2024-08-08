@@ -1,6 +1,8 @@
-const pool = require('../config/database');
+const { Book, Borrower, BorrowingProcess, sequelize } = require('../models');
 
 exports.checkoutBook = async (req, res) => {
+    const t = await sequelize.transaction();
+
     try {
         const { book_id, borrower_id, due_date } = req.body;
 
@@ -9,40 +11,41 @@ exports.checkoutBook = async (req, res) => {
         }
 
         // Check if the book is available
-        const [bookResult] = await pool.query('SELECT quantity FROM Books WHERE id = ?', [book_id]);
-        if (bookResult.length === 0 || bookResult[0].quantity <= 0) {
+        const book = await Book.findByPk(book_id, { transaction: t });
+        if (!book || book.quantity <= 0) {
+            await t.rollback();
             return res.status(400).json({ message: 'Book is not available' });
         }
 
-        // Start a transaction
-        const connection = await pool.getConnection();
-        await connection.beginTransaction();
-
-        try {
-            // Insert into BorrowingProcesses
-            await connection.query(
-                'INSERT INTO BorrowingProcesses (book_id, borrower_id, checkout_date, due_date) VALUES (?, ?, CURDATE(), ?)',
-                [book_id, borrower_id, due_date]
-            );
-
-            // Update book quantity
-            await connection.query('UPDATE Books SET quantity = quantity - 1 WHERE id = ?', [book_id]);
-
-            await connection.commit();
-            res.status(201).json({ message: 'Book checked out successfully' });
-        } catch (error) {
-            await connection.rollback();
-            throw error;
-        } finally {
-            connection.release();
+        const borrower = await Borrower.findByPk(borrower_id, { transaction: t });
+        if (!borrower) {
+            await t.rollback();
+            return res.status(400).json({ message: 'Borrower not found' });
         }
+
+        // Insert into BorrowingProcesses
+        await BorrowingProcess.create({
+            book_id,
+            borrower_id,
+            checkout_date: new Date(),
+            due_date
+        }, { transaction: t });
+
+        // Update book quantity
+        await book.decrement('quantity', { transaction: t });
+
+        await t.commit();
+        res.status(201).json({ message: 'Book checked out successfully' });
     } catch (error) {
+        await t.rollback();
         console.error('Error checking out book:', error);
         res.status(500).json({ message: 'An error occurred while checking out the book' });
     }
 };
 
 exports.returnBook = async (req, res) => {
+    const t = await sequelize.transaction();
+
     try {
         const { borrowing_process_id } = req.body;
 
@@ -50,37 +53,36 @@ exports.returnBook = async (req, res) => {
             return res.status(400).json({ message: 'Borrowing Process ID is required' });
         }
 
-        // Start a transaction
-        const connection = await pool.getConnection();
-        await connection.beginTransaction();
-
-        try {
-            // Update BorrowingProcesses
-            const [updateResult] = await connection.query(
-                'UPDATE BorrowingProcesses SET return_date = CURDATE() WHERE id = ? AND return_date IS NULL',
-                [borrowing_process_id]
-            );
-
-            if (updateResult.affectedRows === 0) {
-                await connection.rollback();
-                return res.status(404).json({ message: 'Borrowing process not found or book already returned' });
+        // Update BorrowingProcesses
+        const [updatedRows] = await BorrowingProcess.update(
+            { return_date: new Date() },
+            { 
+                where: { 
+                    id: borrowing_process_id, 
+                    return_date: null 
+                },
+                transaction: t
             }
+        );
 
-            // Get book_id from BorrowingProcesses
-            const [borrowingProcess] = await connection.query('SELECT book_id FROM BorrowingProcesses WHERE id = ?', [borrowing_process_id]);
-
-            // Update book quantity
-            await connection.query('UPDATE Books SET quantity = quantity + 1 WHERE id = ?', [borrowingProcess[0].book_id]);
-
-            await connection.commit();
-            res.json({ message: 'Book returned successfully' });
-        } catch (error) {
-            await connection.rollback();
-            throw error;
-        } finally {
-            connection.release();
+        if (updatedRows === 0) {
+            await t.rollback();
+            return res.status(404).json({ message: 'Borrowing process not found or book already returned' });
         }
+
+        // Get book_id from BorrowingProcesses
+        const borrowingProcess = await BorrowingProcess.findByPk(borrowing_process_id, { transaction: t });
+
+        // Update book quantity
+        await Book.increment('quantity', { 
+            where: { id: borrowingProcess.book_id },
+            transaction: t 
+        });
+
+        await t.commit();
+        res.json({ message: 'Book returned successfully' });
     } catch (error) {
+        await t.rollback();
         console.error('Error returning book:', error);
         res.status(500).json({ message: 'An error occurred while returning the book' });
     }
@@ -90,15 +92,26 @@ exports.getBorrowerBooks = async (req, res) => {
     try {
         const { id } = req.params;
 
-        const [rows] = await pool.query(
-            `SELECT b.title, b.author, bp.checkout_date, bp.due_date
-             FROM BorrowingProcesses bp
-             JOIN Books b ON bp.book_id = b.id
-             WHERE bp.borrower_id = ? AND bp.return_date IS NULL`,
-            [id]
-        );
+        const borrowerBooks = await BorrowingProcess.findAll({
+            where: {
+                borrower_id: id,
+                return_date: null
+            },
+            include: [{
+                model: Book,
+                attributes: ['title', 'author']
+            }],
+            attributes: ['checkout_date', 'due_date']
+        });
 
-        res.json(rows);
+        const formattedBooks = borrowerBooks.map(bp => ({
+            title: bp.Book.title,
+            author: bp.Book.author,
+            checkout_date: bp.checkout_date,
+            due_date: bp.due_date
+        }));
+
+        res.json(formattedBooks);
     } catch (error) {
         console.error('Error getting borrower books:', error);
         res.status(500).json({ message: 'An error occurred while fetching borrower books' });
@@ -107,15 +120,35 @@ exports.getBorrowerBooks = async (req, res) => {
 
 exports.getOverdueBooks = async (req, res) => {
     try {
-        const [rows] = await pool.query(
-            `SELECT b.title, b.author, br.name AS borrower_name, bp.checkout_date, bp.due_date
-             FROM BorrowingProcesses bp
-             JOIN Books b ON bp.book_id = b.id
-             JOIN Borrowers br ON bp.borrower_id = br.id
-             WHERE bp.due_date < CURDATE() AND bp.return_date IS NULL`
-        );
+        const overdueBooks = await BorrowingProcess.findAll({
+            where: {
+                due_date: {
+                    [sequelize.Op.lt]: new Date()
+                },
+                return_date: null
+            },
+            include: [
+                {
+                    model: Book,
+                    attributes: ['title', 'author']
+                },
+                {
+                    model: Borrower,
+                    attributes: ['name']
+                }
+            ],
+            attributes: ['checkout_date', 'due_date']
+        });
 
-        res.json(rows);
+        const formattedOverdueBooks = overdueBooks.map(bp => ({
+            title: bp.Book.title,
+            author: bp.Book.author,
+            borrower_name: bp.Borrower.name,
+            checkout_date: bp.checkout_date,
+            due_date: bp.due_date
+        }));
+
+        res.json(formattedOverdueBooks);
     } catch (error) {
         console.error('Error getting overdue books:', error);
         res.status(500).json({ message: 'An error occurred while fetching overdue books' });

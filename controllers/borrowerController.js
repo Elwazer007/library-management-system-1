@@ -1,4 +1,4 @@
-const pool = require('../config/database');
+const { Borrower } = require('../models');
 
 exports.registerBorrower = async (req, res) => {
     try {
@@ -7,13 +7,14 @@ exports.registerBorrower = async (req, res) => {
         if (!name || !email) {
             return res.status(400).json({ message: 'Name and email are required' });
         }
-
-        const [result] = await pool.query(
-            'INSERT INTO Borrowers (name, email, registered_date) VALUES (?, ?, CURDATE())',
-            [name, email]
-        );
-
-        res.status(201).json({ message: 'Borrower registered successfully', id: result.insertId });
+        
+        const newBorrower = await Borrower.create({
+            name,
+            email,
+            registered_date: new Date()
+        });
+        
+        res.status(201).json({ message: 'Borrower registered successfully', id: newBorrower.id });
     } catch (error) {
         console.error('Error registering borrower:', error);
         res.status(500).json({ message: 'An error occurred while registering the borrower' });
@@ -24,20 +25,20 @@ exports.updateBorrower = async (req, res) => {
     try {
         const { id } = req.params;
         const { name, email } = req.body;
-
+        
         if (!name && !email) {
             return res.status(400).json({ message: 'No fields to update' });
         }
-
-        const [result] = await pool.query(
-            'UPDATE Borrowers SET name = IFNULL(?, name), email = IFNULL(?, email) WHERE id = ?',
-            [name, email, id]
+        
+        const [updatedRows] = await Borrower.update(
+            { name, email },
+            { where: { id } }
         );
-
-        if (result.affectedRows === 0) {
+        
+        if (updatedRows === 0) {
             return res.status(404).json({ message: 'Borrower not found' });
         }
-
+        
         res.json({ message: 'Borrower updated successfully' });
     } catch (error) {
         console.error('Error updating borrower:', error);
@@ -48,13 +49,13 @@ exports.updateBorrower = async (req, res) => {
 exports.deleteBorrower = async (req, res) => {
     try {
         const { id } = req.params;
-
-        const [result] = await pool.query('DELETE FROM Borrowers WHERE id = ?', [id]);
-
-        if (result.affectedRows === 0) {
+        
+        const deletedRows = await Borrower.destroy({ where: { id } });
+        
+        if (deletedRows === 0) {
             return res.status(404).json({ message: 'Borrower not found' });
         }
-
+        
         res.json({ message: 'Borrower deleted successfully' });
     } catch (error) {
         console.error('Error deleting borrower:', error);
@@ -64,8 +65,8 @@ exports.deleteBorrower = async (req, res) => {
 
 exports.listBorrowers = async (req, res) => {
     try {
-        const [rows] = await pool.query('SELECT * FROM Borrowers');
-        res.json(rows);
+        const borrowers = await Borrower.findAll();
+        res.json(borrowers);
     } catch (error) {
         console.error('Error listing borrowers:', error);
         res.status(500).json({ message: 'An error occurred while fetching borrowers' });
