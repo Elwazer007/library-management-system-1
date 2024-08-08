@@ -11,7 +11,7 @@ const sequelize = new Sequelize(dbName, dbUser, dbPassword, {
   host: dbHost,
   port: dbPort,
   dialect: "mysql",
-  logging: process.env.NODE_ENV === "development" ? console.log : false,
+  logging: process.env.SEQUELIZE_LOGGING === "true" ? console.log : false,
 });
 
 async function testConnection() {
